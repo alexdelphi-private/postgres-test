@@ -21,27 +21,35 @@ FROM cte_sales_filter AS csf
 JOIN product AS pdc
 ON csf.product_id = pdc.id
 ORDER BY
-     pdc.id DESC
-LIMIT 10
+     csf.qty DESC
+LIMIT 10;
 
 /* b)	Вывести товар, который продавался в наибольшем кол-ве аптек по итогам 2016 года. */
+
+/* Замечание: если таких товаров несколько, выведем товар с минимальным названием 
+ * в лексикографическом порядке
+ */
 WITH 
-     cte_sales_by_partner (partner_id, product_cnt)
+     cte_sales_by_partner (product_id, partner_cnt)
 AS
 (
     SELECT
-         sls.partner_id
-        ,COUNT(sls.product_id) AS product_cnt
+         sls.product_id
+        ,COUNT(sls.partner_id) AS partner_cnt
     FROM sales AS sls
-    GROUP BY sls.partner_id
     WHERE 1 = 1
         AND sls.sale_date >= CAST('2016-01-01' AS TIMESTAMP) 
         AND sls.sale_date < CAST('2017-01-01' AS TIMESTAMP)
+    GROUP BY sls.product_id
 )
 SELECT
-     csp.partner_id
+     prd.name
 FROM cte_sales_by_partner AS csp
-ORDER BY sls.product_cnt DESC
+JOIN product AS prd
+ON csp.product_id = prd.id
+ORDER BY 
+     sls.product_cnt DESC
+    ,prd.name ASC
 LIMIT 1;
 
 /* c)	Вывести товары, которые не продавались в г. Краснодар */
@@ -162,13 +170,13 @@ WITH
     AS
     (
         SELECT
-             sales.id AS sales_id
-            ,sales.sale_date
-            ,date_trunc('month', sales.sale_date) AS sale_month
-            ,sales.product_id
+             sls.id AS sales_id
+            ,sls.sale_date
+            ,date_trunc('month', sls.sale_date) AS sale_month
+            ,sls.product_id
              /* для поиска средневзвешенной цены */
-            ,sales.product_qty
-            ,sales.price
+            ,sls.product_qty
+            ,sls.price
         FROM sales AS sls
         /* здесь нужен фильтр на дату/время продажи! например, за последний 31 день */
     )
@@ -187,7 +195,9 @@ WITH
             ,SUM(sle.product_qty * sle.price) AS total_income /* приход за месяц */
             ,SUM(sle.price) AS shipped_pcs /* объем по проданным позициям */
         FROM cte_sales_extended AS sle
-        GROUP BY sle.sale_month
+        GROUP BY 
+             sle.product_id
+            ,sle.sale_month
     )
     ,cte_dearest_product /* Поиск самого дорогого товара за текущий месяц */
     (
@@ -215,25 +225,25 @@ WITH
         ) DESC
         LIMIT 1
     )
-    SELECT
-         sls.sale_date AS "Дата"
-        ,sp.name AS "Аптека"
-        ,cty.name AS "Город"
-        ,pdc.name AS "Товар"
-        ,sls.product_qty AS "Цена"
-    FROM sales AS sls
-    JOIN cte_dearest_product AS cdp
-    ON cdp.id = sls.product_id
-    JOIN product AS pdc
-    ON cdp.id = pdc.id
-    JOIN partner AS sp
-    ON sp.id = sls.partner_id
-    JOIN city AS cty
-    ON cty.id = sp.city_id
-    ORDER BY
-         sls.sale_date ASC
-        ,cty.name ASC
-        ,sp.name ASC;
+SELECT
+     sls.sale_date AS "Дата"
+    ,sp.name AS "Аптека"
+    ,cty.name AS "Город"
+    ,pdc.name AS "Товар"
+    ,sls.product_qty AS "Цена"
+FROM sales AS sls
+JOIN cte_dearest_product AS cdp
+ON cdp.id = sls.product_id
+JOIN product AS pdc
+ON cdp.id = pdc.id
+JOIN partner AS sp
+ON sp.id = sls.partner_id
+JOIN city AS cty
+ON cty.id = sp.city_id
+ORDER BY
+     sls.sale_date ASC
+    ,cty.name ASC
+    ,sp.name ASC;
 
 /* f)	В базе произошла ошибка. 
  * Все продажи за январь 2017 года для аптек г. Ставрополь сохранились в базе со знаком минус. 
@@ -311,13 +321,13 @@ WITH
         ,sls.partner_id
         ,ROW_NUMBER() OVER (
                             PARTITION BY
-                                ,sls.sale_date
+                                 sls.sale_date
                                 ,sls.product_id
                                 ,sls.partner_id          
                             ORDER BY
                                  sls.id ASC                       
                            )
-    FROM cte_sales_dup_ranked AS sls
+    FROM cte_sales_dup AS sls
 )    
     ,cte_sales_to_delete
     (
@@ -337,10 +347,9 @@ WITH
     FROM cte_sales_dup_ranked AS sls
     WHERE sls.row_num > 1
 )  
-DELETE FROM main
-FROM sales AS main
-JOIN cte_sales_to_delete AS csd
-ON main.id = csd.id;
+DELETE FROM sales AS main
+USING cte_sales_to_delete AS csd
+WHERE main.id = csd.id;
     
 
 

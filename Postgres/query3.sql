@@ -51,8 +51,9 @@ CREATE OR REPLACE FUNCTION insert_driver
 RETURNS INTEGER AS $$
 DECLARE
     var_instance_id     INTEGER := 0; /* id записи */
-    var_is_name_valid   BOOLEAN := TRUE; /* признак, что ФИО не NULL */
-    var_names_present   INTEGER := 0; /* признак, что такого имени  */
+    var_is_name_valid   BOOLEAN := TRUE; /* ФИО не NULL */
+    var_is_phone_valid  BOOLEAN := TRUE; /* телефон в нормальном формате */
+    var_names_present   INTEGER := 0; /* такое имя НЕ уникально  */
 BEGIN
     /* Вставляем фиктивную запись в таблицу error_instance. 
      * Её id даёт новый instance_id справочника статусов.
@@ -64,17 +65,17 @@ BEGIN
     VALUES (0, 0)
     RETURNING id INTO var_instance_id;
     
-    DELETE FROM err
-    FROM error_instance AS err
-    WHERE err.id = var_instance_id;
+    DELETE FROM error_instance
+    WHERE id = var_instance_id;
     /* Валидация. 
      * Дальнейшие ошибки будут записываться с параметром instance_id = var_instance_id 
      */
      
     /* По условиям ТЗ телефон может быть NULL */
-    IF phone IS NOT NULL AND phone !~ '7\d{10}' THEN
+    IF phone IS NOT NULL AND phone !~ '^7\d{10}$' THEN
         INSERT INTO error_instance (instance_id, error_id)
-        VALUES (var_instance_id, 5); /* 'Телефон не находится в формате 79181112233' */        
+        VALUES (var_instance_id, 5); /* 'Телефон не находится в формате 79181112233' */    
+        var_is_phone_valid := FALSE;    
     END IF;
      
     IF last_name IS NULL THEN
@@ -99,18 +100,22 @@ BEGIN
     
     /* Проверка уникальности ФИО */
     SELECT
-        COUNT(*) AS cnt
+        COUNT(*)
+    INTO var_names_present
     FROM driver AS drv
     WHERE 1 = 1
-        AND drv.last_name = last_name
-        AND drv.patronymic = patronymic
-        AND drv.first_name = first_name
-    RETURNING cnt INTO var_names_present;
+        AND drv.last_name = insert_driver.last_name
+        AND drv.patronymic = insert_driver.patronymic
+        AND drv.first_name = insert_driver.first_name;
     
     IF var_names_present > 0 THEN
         INSERT INTO error_instance (instance_id, error_id)
         VALUES (var_instance_id, 4); /* 'Связка ФИО не уникальна' */
         RETURN var_instance_id;        
+    END IF;
+    
+    IF NOT var_is_phone_valid THEN
+        RETURN var_instance_id;
     END IF;
     
     INSERT INTO driver

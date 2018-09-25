@@ -47,7 +47,7 @@ CREATE TABLE driver
          ,patronymic 
      )
     ,CONSTRAINT phone_match
-     CHECK(phone ~ '7\d{10}')
+     CHECK(phone ~ '^7\d{10}$')
 );
 
 GRANT SELECT ON driver TO controller;
@@ -74,8 +74,7 @@ CREATE TABLE route
     ,type_name          VARCHAR(100)        NOT NULL DEFAULT 'Прямая доставка'
     ,is_open            type_route_status   NOT NULL DEFAULT 'не открыт'
     ,open_dtm           TIMESTAMP           NOT NULL
-    ,user_opened        VARCHAR(100)        NOT NULL
-    ,routed_driver_id   INTEGER             NOT NULL /* водители маршрута */
+    ,user_opened        VARCHAR(100)        NOT NULL /* водители маршрута привязаны отдельно */
 );
 
 GRANT SELECT ON route TO controller;
